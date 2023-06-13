@@ -7,41 +7,18 @@ Xiangnan He et al. LightGCN: Simplifying and Powering Graph Convolution Network 
 
 Define models here
 """
-import world
+import logging
+
 import torch
+
 from dataloader import BasicDataset
-from torch import nn
 
 
-class BasicModel(nn.Module):
-    def __init__(self):
-        super(BasicModel, self).__init__()
-
-    def getUsersRating(self, users):
-        raise NotImplementedError
-
-
-class PairWiseModel(BasicModel):
-    def __init__(self):
-        super(PairWiseModel, self).__init__()
-
-    def bpr_loss(self, users, pos, neg):
-        """
-        Parameters:
-            users: users list
-            pos: positive items for corresponding users
-            neg: negative items for corresponding users
-        Return:
-            (log-loss, l2-loss)
-        """
-        raise NotImplementedError
-
-
-class LightGCN(BasicModel):
+class LightGCN(torch.nn.Module):
     def __init__(self, config: dict, dataset: BasicDataset):
         super(LightGCN, self).__init__()
         self.config = config
-        self.dataset: BasicDataset = dataset
+        self.dataset = dataset
         self.__init_weight()
 
     def __init_weight(self):
@@ -52,32 +29,20 @@ class LightGCN(BasicModel):
         self.A_split = self.config["A_split"]
         self.embedding_user = torch.nn.Embedding(num_embeddings=self.num_users, embedding_dim=self.latent_dim)
         self.embedding_item = torch.nn.Embedding(num_embeddings=self.num_items, embedding_dim=self.latent_dim)
-        if self.config["pretrain"] == 0:
-            #             nn.init.xavier_uniform_(self.embedding_user.weight, gain=1)
-            #             nn.init.xavier_uniform_(self.embedding_item.weight, gain=1)
-            #             print('use xavier initilizer')
-            # random normal init seems to be a better choice when lightGCN actually don't use any non-linear activation function
-            nn.init.normal_(self.embedding_user.weight, std=0.1)
-            nn.init.normal_(self.embedding_item.weight, std=0.1)
-            world.cprint("use NORMAL distribution initilizer")
-        else:
-            self.embedding_user.weight.data.copy_(torch.from_numpy(self.config["user_emb"]))
-            self.embedding_item.weight.data.copy_(torch.from_numpy(self.config["item_emb"]))
-            print("use pretrained data")
-        self.f = nn.Sigmoid()
-        self.Graph = self.dataset.getSparseGraph()
-        print(f"lgn is already to go")
-
-        # print("save_txt")
+        # random normal init seems to be a better choice when lightGCN actually don't use any non-linear activation function
+        torch.nn.init.normal_(self.embedding_user.weight, std=0.1)
+        torch.nn.init.normal_(self.embedding_item.weight, std=0.1)
+        self.f = torch.nn.Sigmoid()
+        self.Graph = self.dataset.get_sparse_graph()
+        logging.info("LightGCN model was successfully initialized")
 
     def computer(self):
         """
-        propagate methods for lightGCN
+        Compute embeddings for all items and users
         """
         users_emb = self.embedding_user.weight
         items_emb = self.embedding_item.weight
         all_emb = torch.cat([users_emb, items_emb])
-        #   torch.split(all_emb , [self.num_users, self.num_items])
         embs = [all_emb]
         g = self.Graph
 
@@ -92,19 +57,18 @@ class LightGCN(BasicModel):
                 all_emb = torch.sparse.mm(g, all_emb)
             embs.append(all_emb)
         embs = torch.stack(embs, dim=1)
-        # print(embs.size())
         light_out = torch.mean(embs, dim=1)
         users, items = torch.split(light_out, [self.num_users, self.num_items])
         return users, items
 
-    def getUsersRating(self, users):
+    def get_users_rating(self, users: torch.Tensor):
         all_users, all_items = self.computer()
         users_emb = all_users[users.long()]
         items_emb = all_items
         rating = self.f(torch.matmul(users_emb, items_emb.t()))
         return rating
 
-    def getEmbedding(self, users, pos_items, neg_items):
+    def get_embedding(self, users: torch.Tensor, pos_items: torch.Tensor, neg_items: torch.Tensor):
         all_users, all_items = self.computer()
         users_emb = all_users[users]
         pos_emb = all_items[pos_items]
@@ -114,8 +78,8 @@ class LightGCN(BasicModel):
         neg_emb_ego = self.embedding_item(neg_items)
         return users_emb, pos_emb, neg_emb, users_emb_ego, pos_emb_ego, neg_emb_ego
 
-    def bpr_loss(self, users, pos, neg):
-        (users_emb, pos_emb, neg_emb, userEmb0, posEmb0, negEmb0) = self.getEmbedding(users.long(), pos.long(), neg.long())
+    def bpr_loss(self, users: torch.Tensor, pos: torch.Tensor, neg: torch.Tensor):
+        (users_emb, pos_emb, neg_emb, userEmb0, posEmb0, negEmb0) = self.get_embedding(users.long(), pos.long(), neg.long())
         reg_loss = (1 / 2) * (userEmb0.norm(2).pow(2) + posEmb0.norm(2).pow(2) + negEmb0.norm(2).pow(2)) / float(len(users))
         pos_scores = torch.mul(users_emb, pos_emb)
         pos_scores = torch.sum(pos_scores, dim=1)
@@ -126,10 +90,9 @@ class LightGCN(BasicModel):
 
         return loss, reg_loss
 
-    def forward(self, users, items):
+    def forward(self, users: torch.Tensor, items: torch.Tensor):
         # compute embedding
         all_users, all_items = self.computer()
-        # print('forward')
         # all_users, all_items = self.computer()
         users_emb = all_users[users]
         items_emb = all_items[items]

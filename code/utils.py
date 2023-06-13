@@ -5,37 +5,25 @@ Xiangnan He et al. LightGCN: Simplifying and Powering Graph Convolution Network 
 
 @author: Jianbai Ye (gusye@mail.ustc.edu.cn)
 """
-import world
+import os
+
 import torch
 from torch import optim
 import numpy as np
+
+import world
 from dataloader import BasicDataset
-from time import time
-from model import PairWiseModel
-from sklearn.metrics import roc_auc_score
-import os
-
-try:
-    from cppimport import imp_from_filepath
-    from os.path import join, dirname
-
-    path = join(dirname(__file__), "sources/sampling.cpp")
-    sampling = imp_from_filepath(path)
-    sampling.seed(world.seed)
-    sample_ext = True
-except Exception:
-    world.cprint("Cpp extension not loaded")
-    sample_ext = False
+from model import LightGCN
 
 
 class BPRLoss:
-    def __init__(self, recmodel: PairWiseModel, config: dict):
+    def __init__(self, recmodel: LightGCN, config: dict):
         self.model = recmodel
         self.weight_decay = config["decay"]
         self.lr = config["lr"]
         self.opt = optim.Adam(recmodel.parameters(), lr=self.lr)
 
-    def stageOne(self, users, pos, neg):
+    def stageOne(self, users: torch.Tensor, pos: torch.Tensor, neg: torch.Tensor):
         loss, reg_loss = self.model.bpr_loss(users, pos, neg)
         reg_loss = reg_loss * self.weight_decay
         loss = loss + reg_loss
@@ -47,37 +35,20 @@ class BPRLoss:
         return loss.cpu().item()
 
 
-def UniformSample_original(dataset, neg_ratio=1):
-    dataset: BasicDataset
-    allPos = dataset.allPos
-    start = time()
-    if sample_ext:
-        S = sampling.sample_negative(dataset.n_users, dataset.m_items, dataset.trainDataSize, allPos, neg_ratio)
-    else:
-        S = UniformSample_original_python(dataset)
-    return S
-
-
-def UniformSample_original_python(dataset):
+def UniformSample(dataset: BasicDataset):
     """
     the original impliment of BPR Sampling in LightGCN
     :return:
         np.array
     """
-    total_start = time()
-    dataset: BasicDataset
-    user_num = dataset.trainDataSize
+    user_num = dataset.train_data_size
     users = np.random.randint(0, dataset.n_users, user_num)
-    allPos = dataset.allPos
+    all_positions = dataset.all_positions
     S = []
-    sample_time1 = 0.0
-    sample_time2 = 0.0
     for i, user in enumerate(users):
-        start = time()
-        posForUser = allPos[user]
+        posForUser = all_positions[user]
         if len(posForUser) == 0:
             continue
-        sample_time2 += time() - start
         posindex = np.random.randint(0, len(posForUser))
         positem = posForUser[posindex]
         while True:
@@ -87,9 +58,6 @@ def UniformSample_original_python(dataset):
             else:
                 break
         S.append([user, positem, negitem])
-        end = time()
-        sample_time1 += end - start
-    total = time() - total_start
     return np.array(S)
 
 
@@ -106,15 +74,22 @@ def set_seed(seed):
 
 
 def getFileName():
-    if world.model_name == "mf":
-        file = f"mf-{world.dataset}-{world.config['latent_dim_rec']}.pth.tar"
-    elif world.model_name == "lgn":
-        file = f"lgn-{world.dataset}-{world.config['lightGCN_n_layers']}-{world.config['latent_dim_rec']}.pth.tar"
+    file = f"lgn-{world.DATASET}-{world.CONFIG['lightGCN_n_layers']}-{world.CONFIG['latent_dim_rec']}.pth.tar"
     return os.path.join(world.FILE_PATH, file)
 
 
+def results_to_progress_log(results: dict):
+    for key, val in results.items():
+        if isinstance(val, np.ndarray):
+            if len(val) == 1:
+                results[key] = val[0]
+            else:
+                results[key] = val.tolist()
+    return "; ".join(f"{key}: {val}" for key, val in results.items())
+
+
 def minibatch(*tensors, **kwargs):
-    batch_size = kwargs.get("batch_size", world.config["bpr_batch_size"])
+    batch_size = kwargs.get("batch_size", world.CONFIG["bpr_batch_size"])
 
     if len(tensors) == 1:
         tensor = tensors[0]
@@ -166,16 +141,8 @@ class timer:
             return -1
 
     @staticmethod
-    def dict(select_keys=None):
-        hint = "|"
-        if select_keys is None:
-            for key, value in timer.NAMED_TAPE.items():
-                hint = hint + f"{key}:{value:.2f}|"
-        else:
-            for key in select_keys:
-                value = timer.NAMED_TAPE[key]
-                hint = hint + f"{key}:{value:.2f}|"
-        return hint
+    def dict(select_keys=None) -> dict:
+        return {key: val for key, val in timer.NAMED_TAPE.items() if select_keys is None or key in select_keys}
 
     @staticmethod
     def zero(select_keys=None):
@@ -257,19 +224,7 @@ def NDCGatK_r(test_data, r, k):
     return np.sum(ndcg)
 
 
-def AUC(all_item_scores, dataset, test_data):
-    """
-    design for a single user
-    """
-    dataset: BasicDataset
-    r_all = np.zeros((dataset.m_items,))
-    r_all[test_data] = 1
-    r = r_all[all_item_scores >= 0]
-    test_item_scores = all_item_scores[all_item_scores >= 0]
-    return roc_auc_score(r, test_item_scores)
-
-
-def getLabel(test_data, pred_data):
+def get_label(test_data, pred_data):
     r = []
     for i in range(len(test_data)):
         groundTrue = test_data[i]
