@@ -31,13 +31,11 @@ if not os.path.exists(FILE_PATH):
 
 config = {}
 all_dataset = ["lastfm", "gowalla", "yelp2018", "amazon-book"]
-all_models = ["mf", "lgn"]
+all_models = ["lgn"]
 # config['batch_size'] = 4096
 config["bpr_batch_size"] = args.bpr_batch
 config["latent_dim_rec"] = args.recdim
 config["lightGCN_n_layers"] = args.layer
-config["dropout"] = args.dropout
-config["keep_prob"] = args.keepprob
 config["A_n_fold"] = args.a_fold
 config["test_u_batch_size"] = args.testbatch
 config["multicore"] = args.multicore
