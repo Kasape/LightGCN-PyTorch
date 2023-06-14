@@ -59,7 +59,7 @@ class LastFM(BasicDataset):
     LastFM dataset
     """
 
-    def __init__(self, device: torch.device, path="../data/lastfm"):
+    def __init__(self, device: torch.device, path="data/lastfm"):
         # train or test
         logging.info("Creating dataset LastFM")
         self.mode_dict = {"train": 0, "test": 1}

@@ -14,15 +14,15 @@ from model import LightGCN
 
 
 class BPRLoss:
-    def __init__(self, recmodel: LightGCN, weight_decay: float, learning_rate: float):
+    def __init__(self, recmodel: LightGCN, lambda_: float, learning_rate: float):
         self.model = recmodel
-        self.weight_decay = weight_decay
+        self.lambda_ = lambda_
         self.lr = learning_rate
         self.opt = optim.Adam(recmodel.parameters(), lr=self.lr)
 
-    def stageOne(self, users: torch.Tensor, pos: torch.Tensor, neg: torch.Tensor):
+    def stage_one(self, users: torch.Tensor, pos: torch.Tensor, neg: torch.Tensor):
         loss, reg_loss = self.model.bpr_loss(users, pos, neg)
-        reg_loss = reg_loss * self.weight_decay
+        reg_loss = reg_loss * self.lambda_
         loss = loss + reg_loss
 
         self.opt.zero_grad()
@@ -95,8 +95,6 @@ def minibatch(*tensors, **kwargs):
 
 
 def shuffle(*arrays, **kwargs):
-    require_indices = kwargs.get("indices", False)
-
     if len(set(len(x) for x in arrays)) != 1:
         raise ValueError("All inputs to shuffle must have " "the same length.")
 
@@ -107,11 +105,7 @@ def shuffle(*arrays, **kwargs):
         result = arrays[0][shuffle_indices]
     else:
         result = tuple(x[shuffle_indices] for x in arrays)
-
-    if require_indices:
-        return result, shuffle_indices
-    else:
-        return result
+    return result
 
 
 class timer:

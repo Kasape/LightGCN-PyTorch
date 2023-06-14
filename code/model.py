@@ -21,9 +21,6 @@ class LightGCN(torch.nn.Module):
         self.n_layers = n_layers
         self.A_split = A_split
         self.dataset = dataset
-        self.__init_weight()
-
-    def __init_weight(self):
         self.num_users = self.dataset.n_users
         self.num_items = self.dataset.m_items
         self.embedding_user = torch.nn.Embedding(num_embeddings=self.num_users, embedding_dim=self.latent_dim)
@@ -78,6 +75,7 @@ class LightGCN(torch.nn.Module):
         return users_emb, pos_emb, neg_emb, users_emb_ego, pos_emb_ego, neg_emb_ego
 
     def bpr_loss(self, users: torch.Tensor, pos: torch.Tensor, neg: torch.Tensor):
+        # Bayesian Personalized Ranking
         (users_emb, pos_emb, neg_emb, userEmb0, posEmb0, negEmb0) = self.get_embedding(users.long(), pos.long(), neg.long())
         reg_loss = (1 / 2) * (userEmb0.norm(2).pow(2) + posEmb0.norm(2).pow(2) + negEmb0.norm(2).pow(2)) / float(len(users))
         pos_scores = torch.mul(users_emb, pos_emb)
@@ -92,7 +90,6 @@ class LightGCN(torch.nn.Module):
     def forward(self, users: torch.Tensor, items: torch.Tensor):
         # compute embedding
         all_users, all_items = self.computer()
-        # all_users, all_items = self.computer()
         users_emb = all_users[users]
         items_emb = all_items[items]
         inner_pro = torch.mul(users_emb, items_emb)

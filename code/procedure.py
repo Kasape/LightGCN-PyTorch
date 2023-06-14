@@ -32,7 +32,7 @@ def BPR_train_original(dataset: BasicDataset, batch_size: int, device: torch.dev
     aver_loss = 0.0
     with utils.timer(name="predicting"):
         for batch_i, (batch_users, batch_pos, batch_neg) in enumerate(utils.minibatch(users, pos_items, neg_items, batch_size=batch_size)):
-            cri = loss_class.stageOne(batch_users, batch_pos, batch_neg)
+            cri = loss_class.stage_one(batch_users, batch_pos, batch_neg)
             aver_loss += cri
             if writer:
                 writer.add_scalar(f"BPRLoss/BPR", cri, epoch * int(len(users) / batch_size) + batch_i)
@@ -61,7 +61,7 @@ def test(
     topks: list,
     batch_size: int,
     device: torch.device,
-    cores: int,
+    n_threads: int,
     epoch: int,
     writer: SummaryWriter = None,
     multicore: bool = False,
@@ -70,7 +70,7 @@ def test(
     rec_model.eval()
     max_K = max(topks)
     if multicore:
-        pool = multiprocessing.Pool(cores)
+        pool = multiprocessing.Pool(n_threads)
 
     results = {}
     with torch.no_grad():

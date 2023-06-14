@@ -42,29 +42,11 @@ if torch.get_num_threads() != args.n_threads:
 if torch.get_num_interop_threads() != args.n_threads:
     torch.set_num_interop_threads(args.n_threads)
 
-# CONFIG = {}
-# # config['batch_size'] = 4096
-# CONFIG["bpr_batch_size"] = args.bpr_batch
-# CONFIG["A_n_fold"] = args.a_fold
-# CONFIG["test_u_batch_size"] = args.testbatch
-# CONFIG["multicore"] = args.multicore
-# CONFIG["lr"] = args.lr
-# CONFIG["decay"] = args.decay
-# CONFIG["A_split"] = False
-
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-CORES = args.n_threads
-SEED = args.seed
-TRAIN_EPOCHS = args.epochs
-LOAD_PREVIOUS = args.load_previous
-TOPKS = args.topks
-TENSORBOARD = args.tensorboard
-DATASET = args.dataset
 
-# ==============================
-logging.info(f"Setting a random seed to: {SEED}")
-utils.set_seed(SEED)
-# ==============================
+logging.info(f"Arguments are: {vars(args)}")
+logging.info(f"Setting a random seed to: {args.seed}")
+utils.set_seed(args.seed)
 
 if args.dataset in ["gowalla", "yelp2018", "amazon-book"]:
     path = os.path.join("data", args.dataset)
@@ -74,11 +56,9 @@ elif args.dataset == "lastfm":
 else:
     raise NotImplementedError(f"Unsupported dataset {args.dataset}")
 
-logging.info(f"Arguments are: {args}")
-
 rec_model = model.LightGCN(args.layers, args.latent_dim, A_split=False, dataset=dataset)
 rec_model = rec_model.to(DEVICE)
-bpr = utils.BPRLoss(rec_model, args.decay, args.lr)
+bpr = utils.BPRLoss(rec_model, args.lambda_, args.lr)
 
 weight_file = os.path.join(FILE_PATH, f"lgn-{args.dataset}-{args.layers}-{args.latent_dim}.pth.tar")
 
