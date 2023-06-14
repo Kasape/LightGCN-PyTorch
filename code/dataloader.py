@@ -16,8 +16,6 @@ import numpy as np
 import pandas as pd
 import scipy.sparse as sp
 
-import world
-
 
 class BasicDataset(torch.utils.data.Dataset):
     @property
@@ -61,7 +59,7 @@ class LastFM(BasicDataset):
     LastFM dataset
     """
 
-    def __init__(self, path="../data/lastfm"):
+    def __init__(self, device: torch.device, path="../data/lastfm"):
         # train or test
         logging.info("Creating dataset LastFM")
         self.mode_dict = {"train": 0, "test": 1}
@@ -136,7 +134,7 @@ class LastFM(BasicDataset):
             data = dense[dense >= 1e-9]
             assert len(index) == len(data)
             self.Graph = torch.sparse.FloatTensor(index.t(), data, torch.Size([self.n_users + self.m_items, self.n_users + self.m_items]))
-            self.Graph = self.Graph.coalesce().to(world.DEVICE)
+            self.Graph = self.Graph.coalesce().to(self.device)
         return self.Graph
 
     def __build_test(self):
@@ -181,11 +179,12 @@ class Loader(BasicDataset):
     Can be used for provided data of gowalla, yelp2018 and amazon-book dataset
     """
 
-    def __init__(self, config=world.CONFIG, path="../data/gowalla"):
+    def __init__(self, A_split: bool, folds: int, path: str, device: torch.device):
         # train or test
         logging.info("loading Creating dataset LastFM")
-        self.split = config["A_split"]
-        self.folds = config["A_n_fold"]
+        self.split = A_split
+        self.folds = folds
+        self.device = device
         self.mode_dict = {"train": 0, "test": 1}
         self.mode = self.mode_dict["train"]
         self.n_user = 0
@@ -233,9 +232,9 @@ class Loader(BasicDataset):
         self.testItem = np.array(testItem)
 
         self.Graph = None
-        logging.info(f"Dataset '{world.DATASET}' contains {self.__train_data_size} interactions for training")
-        logging.info(f"Dataset '{world.DATASET}' contains {self.__test_data_size} interactions for testing")
-        logging.info(f"Dataset '{world.DATASET}' has sparsity {(self.__train_data_size + self.__test_data_size) / self.n_users / self.m_items * 100:2f}%")
+        logging.info(f"Dataset from '{self.path}' contains {self.__train_data_size} interactions for training")
+        logging.info(f"Dataset from '{self.path}' contains {self.__test_data_size} interactions for testing")
+        logging.info(f"Dataset from '{self.path}' has sparsity {(self.__train_data_size + self.__test_data_size) / self.n_users / self.m_items * 100:2f}%")
 
         # (users,items), bipartite graph
         self.UserItemNet = sp.csr_matrix((np.ones(len(self.trainUser)), (self.trainUser, self.trainItem)), shape=(self.n_user, self.m_item))
@@ -246,7 +245,7 @@ class Loader(BasicDataset):
         # pre-calculate
         self.__all_positions = self.get_user_pos_items(list(range(self.n_user)))
         self.__test_dict = self.__build_test()
-        logging.info(f"Dataset '{world.DATASET}' has been initialized")
+        logging.info(f"Dataset from '{self.path}' has been initialized")
 
     @property
     def n_users(self):
@@ -305,7 +304,7 @@ class Loader(BasicDataset):
             else:
                 logging.info(f"Adjacency matrix will not be splitted")
                 self.Graph = self.__convert_sp_mat_to_sp_tensor(norm_adj)
-                self.Graph = self.Graph.coalesce().to(world.DEVICE)
+                self.Graph = self.Graph.coalesce().to(self.device)
         return self.Graph
 
     def get_user_pos_items(self, users):
@@ -337,7 +336,7 @@ class Loader(BasicDataset):
                 end = self.n_users + self.m_items
             else:
                 end = (i_fold + 1) * fold_len
-            A_fold.append(self.__convert_sp_mat_to_sp_tensor(A[start:end]).coalesce().to(world.DEVICE))
+            A_fold.append(self.__convert_sp_mat_to_sp_tensor(A[start:end]).coalesce().to(self.device))
         return A_fold
 
     def __convert_sp_mat_to_sp_tensor(self, X):

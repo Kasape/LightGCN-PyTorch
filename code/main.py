@@ -1,5 +1,5 @@
 import time
-from os.path import join
+import os
 import logging
 
 import torch
@@ -9,34 +9,81 @@ import dataloader
 import model
 import utils
 import procedure
-import world
+from parse import parse_args
 
 LOGGING_FORMAT = "[%(asctime)s] %(levelname)s: %(message)s"
 logging.basicConfig(format=LOGGING_FORMAT, level=logging.INFO)
+
+os.environ["KMP_DUPLICATE_LIB_OK"] = "True"
+args = parse_args()
+
+ROOT_PATH = os.path.dirname(os.path.dirname(__file__))
+CODE_PATH = os.path.join(ROOT_PATH, "code")
+DATA_PATH = os.path.join(ROOT_PATH, "data")
+BOARD_PATH = os.path.join(CODE_PATH, "runs")
+FILE_PATH = os.path.join(CODE_PATH, "checkpoints")
+
+os.makedirs(FILE_PATH, exist_ok=True)
+
+if args.n_threads == -1:
+    system_cpu = os.cpu_count()
+    if system_cpu is None:
+        logging.info(
+            "Number of threads using n-threads parameter were not explicitely provided and it cannot be obtained from the system. Setting number of threads to 1."
+        )
+    else:
+        logging.info(
+            f"Number of threads using n-threads parameter were not explicitely provided. Setting number of threads to {system_cpu} provided by the system"
+        )
+    args.n_threads = system_cpu or 1
+
+if torch.get_num_threads() != args.n_threads:
+    torch.set_num_threads(args.n_threads)
+if torch.get_num_interop_threads() != args.n_threads:
+    torch.set_num_interop_threads(args.n_threads)
+
+# CONFIG = {}
+# # config['batch_size'] = 4096
+# CONFIG["bpr_batch_size"] = args.bpr_batch
+# CONFIG["A_n_fold"] = args.a_fold
+# CONFIG["test_u_batch_size"] = args.testbatch
+# CONFIG["multicore"] = args.multicore
+# CONFIG["lr"] = args.lr
+# CONFIG["decay"] = args.decay
+# CONFIG["A_split"] = False
+
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+CORES = args.n_threads
+SEED = args.seed
+TRAIN_EPOCHS = args.epochs
+LOAD_PREVIOUS = args.load_previous
+TOPKS = args.topks
+TENSORBOARD = args.tensorboard
+DATASET = args.dataset
+
 # ==============================
-logging.info(f"Setting a random seed to: {world.SEED}")
-utils.set_seed(world.SEED)
+logging.info(f"Setting a random seed to: {SEED}")
+utils.set_seed(SEED)
 # ==============================
 
-if world.DATASET in ["gowalla", "yelp2018", "amazon-book"]:
-    dataset = dataloader.Loader(path="../data/" + world.DATASET)
-elif world.DATASET == "lastfm":
-    dataset = dataloader.LastFM()
+if args.dataset in ["gowalla", "yelp2018", "amazon-book"]:
+    path = os.path.join("data", args.dataset)
+    dataset = dataloader.Loader(A_split=False, folds=args.a_fold, path=path, device=DEVICE)
+elif args.dataset == "lastfm":
+    dataset = dataloader.LastFM(device=DEVICE)
+else:
+    raise NotImplementedError(f"Unsupported dataset {args.dataset}")
 
-logging.info("===========config================")
-for key, val in world.CONFIG.items():
-    logging.info(f"{key}: {val}")
-logging.info(f"Metrics will be measured for following @K: {world.TOPKS}")
-logging.info("===========end===================")
+logging.info(f"Arguments are: {args}")
 
+rec_model = model.LightGCN(args.layers, args.latent_dim, A_split=False, dataset=dataset)
+rec_model = rec_model.to(DEVICE)
+bpr = utils.BPRLoss(rec_model, args.decay, args.lr)
 
-rec_model = model.LightGCN(world.CONFIG, dataset)
-rec_model = rec_model.to(world.DEVICE)
-bpr = utils.BPRLoss(rec_model, world.CONFIG)
+weight_file = os.path.join(FILE_PATH, f"lgn-{args.dataset}-{args.layers}-{args.latent_dim}.pth.tar")
 
-weight_file = utils.getFileName()
 logging.info(f"Weights will be saved to {weight_file}")
-if world.LOAD_PREVIOUS:
+if args.load_previous:
     try:
         logging.info(f"Flag for loading previous weights was trigged, loading model with weights from {weight_file}")
         rec_model.load_state_dict(torch.load(weight_file, map_location=torch.device("cpu")))
@@ -44,8 +91,8 @@ if world.LOAD_PREVIOUS:
         logging.warning(f"File {weight_file} does not exist, model will be trained from beginning")
 
 # init tensorboard
-if world.TENSORBOARD:
-    path = join(world.BOARD_PATH, time.strftime("%m-%d-%Hh%Mm%Ss-") + "LGN")
+if args.tensorboard:
+    path = os.path.join(BOARD_PATH, time.strftime("%m-%d-%Hh%Mm%Ss-") + "LGN")
     writer = SummaryWriter(path)
     logging.info(f"Tensorboard was inicitialized to path={path}")
 
@@ -54,13 +101,13 @@ else:
     logging.info("Tensorboard will not be used")
 
 try:
-    for epoch in range(1, world.TRAIN_EPOCHS + 1):
+    for epoch in range(1, args.epochs + 1):
         rec_model.train()
-        results = procedure.BPR_train_original(dataset, bpr, epoch, w=writer)
-        logging.info(f"[TRAIN] Epoch: {epoch}/{world.TRAIN_EPOCHS}; {utils.results_to_progress_log(results)}")
+        results = procedure.BPR_train_original(dataset, args.train_batch, DEVICE, bpr, epoch, writer=writer)
+        logging.info(f"[TRAIN] Epoch: {epoch}/{args.epochs}; {utils.results_to_progress_log(results)}")
         if epoch % 1 == 0:
-            results = procedure.test(dataset, rec_model, epoch, writer)
-            logging.info(f"[TEST] Epoch: {epoch}/{world.TRAIN_EPOCHS}; {utils.results_to_progress_log(results)}")
+            results = procedure.test(dataset, rec_model, args.topks, args.test_batch, DEVICE, args.n_threads, epoch, writer)
+            logging.info(f"[TEST] Epoch: {epoch}/{args.epochs}; {utils.results_to_progress_log(results)}")
             if epoch == 1:
                 assert round(results["Recall@20"], 4) == round(0.08642416, 4)
                 assert round(results["Precision@20"], 4) == round(0.02703128, 4)
@@ -158,5 +205,5 @@ try:
 
         torch.save(rec_model.state_dict(), weight_file)
 finally:
-    if world.TENSORBOARD:
+    if writer is not None:
         writer.close()

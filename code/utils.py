@@ -5,22 +5,19 @@ Xiangnan He et al. LightGCN: Simplifying and Powering Graph Convolution Network 
 
 @author: Jianbai Ye (gusye@mail.ustc.edu.cn)
 """
-import os
-
 import torch
 from torch import optim
 import numpy as np
 
-import world
 from dataloader import BasicDataset
 from model import LightGCN
 
 
 class BPRLoss:
-    def __init__(self, recmodel: LightGCN, config: dict):
+    def __init__(self, recmodel: LightGCN, weight_decay: float, learning_rate: float):
         self.model = recmodel
-        self.weight_decay = config["decay"]
-        self.lr = config["lr"]
+        self.weight_decay = weight_decay
+        self.lr = learning_rate
         self.opt = optim.Adam(recmodel.parameters(), lr=self.lr)
 
     def stageOne(self, users: torch.Tensor, pos: torch.Tensor, neg: torch.Tensor):
@@ -73,11 +70,6 @@ def set_seed(seed):
     torch.manual_seed(seed)
 
 
-def getFileName():
-    file = f"lgn-{world.DATASET}-{world.CONFIG['lightGCN_n_layers']}-{world.CONFIG['latent_dim_rec']}.pth.tar"
-    return os.path.join(world.FILE_PATH, file)
-
-
 def results_to_progress_log(results: dict):
     for key, val in results.items():
         if isinstance(val, np.ndarray):
@@ -89,7 +81,9 @@ def results_to_progress_log(results: dict):
 
 
 def minibatch(*tensors, **kwargs):
-    batch_size = kwargs.get("batch_size", world.CONFIG["bpr_batch_size"])
+    batch_size = kwargs.get("batch_size")
+    if batch_size is None:
+        raise ValueError("Missing parameter 'batch_size'")
 
     if len(tensors) == 1:
         tensor = tensors[0]

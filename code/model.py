@@ -15,18 +15,17 @@ from dataloader import BasicDataset
 
 
 class LightGCN(torch.nn.Module):
-    def __init__(self, config: dict, dataset: BasicDataset):
+    def __init__(self, n_layers: int, latent_dim: int, A_split: bool, dataset: BasicDataset):
         super(LightGCN, self).__init__()
-        self.config = config
+        self.latent_dim = latent_dim
+        self.n_layers = n_layers
+        self.A_split = A_split
         self.dataset = dataset
         self.__init_weight()
 
     def __init_weight(self):
         self.num_users = self.dataset.n_users
         self.num_items = self.dataset.m_items
-        self.latent_dim = self.config["latent_dim_rec"]
-        self.n_layers = self.config["lightGCN_n_layers"]
-        self.A_split = self.config["A_split"]
         self.embedding_user = torch.nn.Embedding(num_embeddings=self.num_users, embedding_dim=self.latent_dim)
         self.embedding_item = torch.nn.Embedding(num_embeddings=self.num_items, embedding_dim=self.latent_dim)
         # random normal init seems to be a better choice when lightGCN actually don't use any non-linear activation function
