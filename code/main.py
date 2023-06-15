@@ -50,7 +50,7 @@ utils.set_seed(args.seed)
 
 if args.dataset in ["gowalla", "yelp2018", "amazon-book"]:
     path = os.path.join("data", args.dataset)
-    dataset = dataloader.Loader(folds=args.a_fold, path=path, device=DEVICE)
+    dataset = dataloader.Loader(path=path, device=DEVICE)
 elif args.dataset == "lastfm":
     dataset = dataloader.LastFM(device=DEVICE)
 else:

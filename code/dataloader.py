@@ -182,10 +182,9 @@ class Loader(BasicDataset):
     Can be used for provided data of gowalla, yelp2018 and amazon-book dataset
     """
 
-    def __init__(self, folds: int, path: str, device: torch.device):
+    def __init__(self, path: str, device: torch.device):
         # train or test
         logging.info(f"Creating dataset from path {path}")
-        self.folds = folds
         self.device = device
         self.n_user = 0
         self.m_item = 0

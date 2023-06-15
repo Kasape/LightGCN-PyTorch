@@ -19,7 +19,6 @@ def parse_args():
     parser.add_argument("--epochs", type=int, default=1000)
     parser.add_argument("--train_batch", type=int, default=2048, help="the batch size for bpr loss training procedure")
     parser.add_argument("--test_batch", type=int, default=100, help="the batch size of users for testing")
-    parser.add_argument("--a_fold", type=int, default=100, help="the fold num used to split large adj matrix, like gowalla")
     parser.add_argument("--topks", nargs="+", type=int, default=20, help="@k test list")
     parser.add_argument("--tensorboard", type=int, default=1, help="enable tensorboard")
     parser.add_argument("--load-previous", default=False, action="store_true", help="Load previous run")
