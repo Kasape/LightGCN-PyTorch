@@ -67,8 +67,8 @@ class BasicDataset(torch.utils.data.Dataset):
 
 class LastFM(BasicDataset):
     """
-    Dataset type for pytorch \n
-    Incldue graph information
+    Dataset type for pytorch
+    Include graph information
     LastFM dataset
     """
 
@@ -319,8 +319,8 @@ class Loader(BasicDataset):
 
     def __convert_sp_mat_to_sp_tensor(self, X):
         coo = X.tocoo().astype(np.float32)
-        row = torch.Tensor(coo.row).long()
-        col = torch.Tensor(coo.col).long()
+        row = torch.from_numpy(coo.row)
+        col = torch.from_numpy(coo.col)
         index = torch.stack([row, col])
         data = torch.FloatTensor(coo.data)
-        return torch.sparse.FloatTensor(index, data, torch.Size(coo.shape))
+        return torch.sparse_coo_tensor(index, data, torch.Size(coo.shape))

@@ -20,9 +20,9 @@ import model
 def BPR_train_original(dataset: BasicDataset, batch_size: int, device: torch.device, loss_class: utils.BPRLoss, epoch: int, writer: SummaryWriter = None):
     with utils.timer(name="sampling"):
         S = utils.UniformSample(dataset)
-    users = torch.Tensor(S[:, 0]).long()
-    pos_items = torch.Tensor(S[:, 1]).long()
-    neg_items = torch.Tensor(S[:, 2]).long()
+    users = torch.from_numpy(S[:, 0])
+    pos_items = torch.from_numpy(S[:, 1])
+    neg_items = torch.from_numpy(S[:, 2])
 
     users = users.to(device)
     pos_items = pos_items.to(device)
@@ -86,10 +86,9 @@ def test(
         for batch_users in utils.minibatch(users, batch_size=batch_size):
             all_positions = dataset.get_user_pos_items(batch_users)
             ground_true = [dataset.test_dict[u] for u in batch_users]
-            batch_users_gpu = torch.Tensor(batch_users).long()
-            batch_users_gpu = batch_users_gpu.to(device)
+            batch_users_gpu = torch.tensor(batch_users).to(device)
 
-            rating = rec_model.get_users_rating(batch_users_gpu)
+            rating = rec_model.predict_users_rating(batch_users_gpu)
             exclude_index = []
             exclude_items = []
             for range_i, items in enumerate(all_positions):

@@ -34,7 +34,10 @@ class BPRLoss:
 
 def UniformSample(dataset: BasicDataset):
     """
-    the original impliment of BPR Sampling in LightGCN
+    The original impliment of BPR Sampling in LightGCN
+
+    For each user, take only one randomly selected item interacted by the users as possitive item
+    and one item not-interacted by the user as negative item
     :return:
         np.array
     """
@@ -44,12 +47,14 @@ def UniformSample(dataset: BasicDataset):
     S = []
     for i, user in enumerate(users):
         posForUser = all_positions[user]
+        # Users without any interacted items are skipped
         if len(posForUser) == 0:
             continue
         posindex = np.random.randint(0, len(posForUser))
         positem = posForUser[posindex]
         while True:
             negitem = np.random.randint(0, dataset.m_items)
+            # TODO fix: this loop will run be broken if user interacted with all items
             if negitem in posForUser:
                 continue
             else:

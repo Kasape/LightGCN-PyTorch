@@ -28,7 +28,7 @@ class LightGCN(torch.nn.Module):
         torch.nn.init.normal_(self.embedding_user.weight, std=0.1)
         torch.nn.init.normal_(self.embedding_item.weight, std=0.1)
         self.f = torch.nn.Sigmoid()
-        self.Graph = self.dataset.get_sparse_graph()
+        self.training_graph = self.dataset.get_sparse_graph()
         logging.info("LightGCN model was successfully initialized")
 
     def computer(self):
@@ -38,19 +38,19 @@ class LightGCN(torch.nn.Module):
         users_emb = self.embedding_user.weight
         items_emb = self.embedding_item.weight
         all_emb = torch.cat([users_emb, items_emb])
-        embs = [all_emb]
-        g = self.Graph
+        embeddings_per_layer = [all_emb]
+        g = self.training_graph
         for layer in range(self.n_layers):
             all_emb = torch.sparse.mm(g, all_emb)
-            embs.append(all_emb)
-        embs = torch.stack(embs, dim=1)
-        light_out = torch.mean(embs, dim=1)
+            embeddings_per_layer.append(all_emb)
+        embeddings_per_layer = torch.stack(embeddings_per_layer, dim=1)
+        light_out = torch.mean(embeddings_per_layer, dim=1)
         users, items = torch.split(light_out, [self.num_users, self.num_items])
         return users, items
 
-    def get_users_rating(self, users: torch.Tensor):
+    def predict_users_rating(self, users: torch.Tensor):
         all_users, all_items = self.computer()
-        users_emb = all_users[users.long()]
+        users_emb = all_users[users]
         items_emb = all_items
         rating = self.f(users_emb @ items_emb.T)
         return rating
@@ -67,7 +67,7 @@ class LightGCN(torch.nn.Module):
 
     def bpr_loss(self, users: torch.Tensor, pos: torch.Tensor, neg: torch.Tensor):
         # Bayesian Personalized Ranking
-        (users_emb, pos_emb, neg_emb, userEmb0, posEmb0, negEmb0) = self.get_embedding(users.long(), pos.long(), neg.long())
+        (users_emb, pos_emb, neg_emb, userEmb0, posEmb0, negEmb0) = self.get_embedding(users, pos, neg)
         reg_loss = (1 / 2) * (userEmb0.norm(2).pow(2) + posEmb0.norm(2).pow(2) + negEmb0.norm(2).pow(2)) / float(len(users))
         pos_scores = torch.mul(users_emb, pos_emb)
         pos_scores = torch.sum(pos_scores, dim=1)
@@ -77,12 +77,3 @@ class LightGCN(torch.nn.Module):
         loss = torch.mean(torch.nn.functional.softplus(neg_scores - pos_scores))
 
         return loss, reg_loss
-
-    def forward(self, users: torch.Tensor, items: torch.Tensor):
-        # compute embedding
-        all_users, all_items = self.computer()
-        users_emb = all_users[users]
-        items_emb = all_items[items]
-        inner_pro = torch.mul(users_emb, items_emb)
-        gamma = torch.sum(inner_pro, dim=1)
-        return gamma
