@@ -22,6 +22,5 @@ def parse_args():
     parser.add_argument("--topks", nargs="+", type=int, default=20, help="@k test list")
     parser.add_argument("--tensorboard", type=int, default=1, help="enable tensorboard")
     parser.add_argument("--load-previous", default=False, action="store_true", help="Load previous run")
-    parser.add_argument("--multicore", default=False, action="store_true", help="Use multiprocessing in test")
     parser.add_argument("--seed", type=int, default=2020, help="random seed")
     return parser.parse_args()

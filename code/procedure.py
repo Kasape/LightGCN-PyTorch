@@ -44,7 +44,7 @@ def BPR_train_original(dataset: BasicDataset, batch_size: int, device: torch.dev
 
 def test_one_batch(X, topks: list) -> dict:
     sorted_items = X[0].numpy()
-    ground_true = X[1]
+    ground_true = X[1]  # list
     r = utils.get_label(ground_true, sorted_items)
     res = {}
     for k in topks:
@@ -61,17 +61,12 @@ def test(
     topks: list,
     batch_size: int,
     device: torch.device,
-    n_threads: int,
     epoch: int,
-    writer: SummaryWriter = None,
-    multicore: bool = False,
+    writer: SummaryWriter = None
 ):
     # eval mode
     rec_model.eval()
     max_K = max(topks)
-    if multicore:
-        pool = multiprocessing.Pool(n_threads)
-
     results = {}
     with torch.no_grad():
         users = list(dataset.test_dict.keys())
@@ -103,12 +98,9 @@ def test(
             ground_true_list.append(ground_true)
         assert total_batch == len(users_list)
         X = zip(rating_list, ground_true_list)
-        if multicore:
-            pre_results = pool.map(test_one_batch, (X, topks))
-        else:
-            pre_results = []
-            for x in X:
-                pre_results.append(test_one_batch(x, topks))
+        pre_results = []
+        for x in X:
+            pre_results.append(test_one_batch(x, topks))
         for result in pre_results:
             for key, val in result.items():
                 if key not in results:
@@ -120,6 +112,4 @@ def test(
         if writer is not None:
             for key, val in results.items():
                 writer.add_scalar(f"Test/{key}", val, epoch)
-        if multicore:
-            pool.close()
         return results

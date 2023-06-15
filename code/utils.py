@@ -185,17 +185,6 @@ def RecallPrecision_ATk(test_data, r, k):
     return {"recall": recall, "precision": precis}
 
 
-def MRRatK_r(r, k):
-    """
-    Mean Reciprocal Rank
-    """
-    pred_data = r[:, :k]
-    scores = np.log2(1.0 / np.arange(1, k + 1))
-    pred_data = pred_data / scores
-    pred_data = pred_data.sum(1)
-    return np.sum(pred_data)
-
-
 def NDCGatK_r(test_data, r, k):
     """
     Normalized Discounted Cumulative Gain
@@ -220,6 +209,7 @@ def NDCGatK_r(test_data, r, k):
 
 def get_label(test_data, pred_data):
     r = []
+    # Iterating over a batch
     for i in range(len(test_data)):
         groundTrue = test_data[i]
         predictTopK = pred_data[i]
