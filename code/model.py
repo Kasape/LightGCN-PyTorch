@@ -85,8 +85,8 @@ class LightGCN(torch.nn.Module):
                     self.state_dict(),
                     os.path.join(savedir, f"epoch-{current_epoch}.pth"),
                 )
-            # for callback in train_callbacks:
-            #     callback.end_epoch()
+            for callback in train_callbacks:
+                callback.end_epoch()
         logging.info("************************** [END] **************************")
 
     def train_step(self, user_indices: torch.Tensor, positive_item_indices: torch.Tensor, negative_item_indices: torch.Tensor, callbacks: list):
@@ -99,7 +99,7 @@ class LightGCN(torch.nn.Module):
         loss = bpr_loss + reg_loss * self.__lambda_
         for callback in callbacks:
             if isinstance(callback, SaveMetricsCallback):
-                callback(bpr_loss=loss, reg_loss=reg_loss, loss=loss)
+                callback(bpr_loss=bpr_loss, reg_loss=reg_loss, loss=loss)
             else:
                 raise NotImplementedError(f"Unsupported callback with type {type(callback)}")
         loss.backward()
@@ -136,6 +136,7 @@ class LightGCN(torch.nn.Module):
         users, items = torch.split(light_out, [self.__n_users, self.__n_items])
         return users, items
 
+    # For evaluation only
     def predict_users_rating(self, users: torch.Tensor):
         users_emb_all, items_emb = self.__compute_embeddings()
         users_emb = users_emb_all[users]
@@ -178,22 +179,21 @@ class UniformSamplingDataset(torch.utils.data.Dataset):
         """
         Returns the number of samples in the dataset.
         """
-        return self.dataset.n_users
+        return self.dataset.train_data_size
 
     def len(self):
         return self.__len__()
 
     def __getitem__(self, idx):
         """
-        For each user, take only one randomly selected item interacted by the users as positive item
-        and one item not-interacted by the user as negative item
+        Randomly select a user, one of his interacted items as a positive item and one of his non-interacted items as a negative item
         """
-        user_index = idx
+        user_index = np.random.randint(0, self.dataset.n_users)
         interacted_items = self.dataset.get_user_pos_items([user_index])[0]
         positive_item_index = np.random.choice(interacted_items)
         while True:
             negative_item_index = np.random.randint(0, self.dataset.m_items)
-            # this loop will run be broken if user interacted with all items
+            # this loop will run indefinitely if user interacted with all items
             if negative_item_index in interacted_items:
                 continue
             else:

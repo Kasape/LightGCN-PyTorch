@@ -64,7 +64,8 @@ model = LightGCN(
 train_dataloader = torch.utils.data.DataLoader(
     UniformSamplingDataset(dataset),
     shuffle=True,
-    batch_size=args.train_batch
+    batch_size=args.train_batch,
+    num_workers=args.n_threads
 )
 
 # weight_file = os.path.join(FILE_PATH, f"lgn-{args.dataset}-{args.layers}-{args.latent_dim}.pth.tar")
@@ -95,7 +96,7 @@ model.fit(train_dataloader, epochs=10, train_callbacks=train_callbacks)
 #         results = procedure.BPR_train_original(dataset, args.train_batch, DEVICE, bpr, epoch, writer=writer)
 #         logging.info(f"[TRAIN] Epoch: {epoch}/{args.epochs}; {utils.results_to_progress_log(results)}")
 #         if epoch % 1 == 0:
-#             results = procedure.test(dataset, rec_model, args.topks, args.test_batch, DEVICE, args.n_threads, epoch, writer)
+#             results = procedure.test(dataset, rec_model, args.topks, args.test_batch, DEVICE, epoch, writer)
 #             logging.info(f"[TEST] Epoch: {epoch}/{args.epochs}; {utils.results_to_progress_log(results)}")
 #             if epoch == 1:
 #                 assert round(results["Recall@20"], 4) == round(0.08642416, 4)
