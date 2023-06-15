@@ -19,31 +19,44 @@ import scipy.sparse as sp
 
 class BasicDataset(torch.utils.data.Dataset):
     @property
-    def n_users(self):
+    def n_users(self) -> int:
         raise NotImplementedError
 
     @property
-    def m_items(self):
+    def m_items(self) -> int:
         raise NotImplementedError
 
     @property
-    def train_data_size(self):
+    def train_data_size(self) -> int:
         raise NotImplementedError
 
     @property
-    def test_dict(self):
-        raise NotImplementedError
-
-    @property
-    def all_positions(self):
-        raise NotImplementedError
-
-    def get_user_pos_items(self, users):
-        raise NotImplementedError
-
-    def get_sparse_graph(self):
+    def test_dict(self) -> dict:
         """
-        build a graph in torch.sparse.IntTensor.
+        Returns dictionary where keys are users (integers),
+        values are lists of items (integers) interacted by a user
+        """
+        raise NotImplementedError
+
+    @property
+    def all_positions(self) -> list:
+        """
+        Returns list with length n_users containing numpy arrays
+        """
+        raise NotImplementedError
+
+    def get_user_pos_items(self, users: list) -> list:
+        """
+        Returns list of numpy array containing positions of interacted items for each given user
+        """
+        raise NotImplementedError
+
+    def get_sparse_graph(self) -> torch.Tensor:
+        """
+        Sparse tensor layout torch.sparse_coo with shape (n_users + m_items, n_users + m_items)
+        in matrix form described in Neural Graph Collaborative Filtering paper.
+
+        Build a graph in torch.sparse.IntTensor.
         Details in NGCF's matrix form
         A =
             |I,   R|
@@ -62,10 +75,6 @@ class LastFM(BasicDataset):
     def __init__(self, device: torch.device, path="data/lastfm"):
         # train or test
         logging.info("Creating dataset LastFM")
-        self.mode_dict = {"train": 0, "test": 1}
-        self.mode = self.mode_dict["train"]
-        # self.n_users = 1892
-        # self.m_items = 4489
         trainData = pd.read_table(join(path, "data1.txt"), header=None)
         testData = pd.read_table(join(path, "test1.txt"), header=None)
         trustNet = pd.read_table(join(path, "trustnetwork.txt"), header=None).to_numpy()
@@ -162,12 +171,6 @@ class LastFM(BasicDataset):
         # return user_id and the positive items of the user
         return user
 
-    def switch2test(self):
-        """
-        change dataset mode to offer test data to dataloader
-        """
-        self.mode = self.mode_dict["test"]
-
     def __len__(self):
         return len(self.trainUniqueUsers)
 
@@ -179,14 +182,11 @@ class Loader(BasicDataset):
     Can be used for provided data of gowalla, yelp2018 and amazon-book dataset
     """
 
-    def __init__(self, A_split: bool, folds: int, path: str, device: torch.device):
+    def __init__(self, folds: int, path: str, device: torch.device):
         # train or test
-        logging.info("loading Creating dataset LastFM")
-        self.split = A_split
+        logging.info(f"Creating dataset from path {path}")
         self.folds = folds
         self.device = device
-        self.mode_dict = {"train": 0, "test": 1}
-        self.mode = self.mode_dict["train"]
         self.n_user = 0
         self.m_item = 0
         train_file = path + "/train.txt"
@@ -238,10 +238,6 @@ class Loader(BasicDataset):
 
         # (users,items), bipartite graph
         self.UserItemNet = sp.csr_matrix((np.ones(len(self.trainUser)), (self.trainUser, self.trainItem)), shape=(self.n_user, self.m_item))
-        self.users_D = np.array(self.UserItemNet.sum(axis=1)).squeeze()
-        self.users_D[self.users_D == 0.0] = 1
-        self.items_D = np.array(self.UserItemNet.sum(axis=0)).squeeze()
-        self.items_D[self.items_D == 0.0] = 1.0
         # pre-calculate
         self.__all_positions = self.get_user_pos_items(list(range(self.n_user)))
         self.__test_dict = self.__build_test()
@@ -298,13 +294,8 @@ class Loader(BasicDataset):
                 logging.info(f"Adjacency matrix was created and it took {end - start}s, saving it...")
                 sp.save_npz(path, norm_adj)
 
-            if self.split is True:
-                self.Graph = self.__split_A_hat(norm_adj)
-                logging.info(f"Spliting adjacency matrix")
-            else:
-                logging.info(f"Adjacency matrix will not be splitted")
-                self.Graph = self.__convert_sp_mat_to_sp_tensor(norm_adj)
-                self.Graph = self.Graph.coalesce().to(self.device)
+            self.Graph = self.__convert_sp_mat_to_sp_tensor(norm_adj)
+            self.Graph = self.Graph.coalesce().to(self.device)
         return self.Graph
 
     def get_user_pos_items(self, users):
@@ -326,18 +317,6 @@ class Loader(BasicDataset):
             else:
                 test_data[user] = [item]
         return test_data
-
-    def __split_A_hat(self, A):
-        A_fold = []
-        fold_len = (self.n_users + self.m_items) // self.folds
-        for i_fold in range(self.folds):
-            start = i_fold * fold_len
-            if i_fold == self.folds - 1:
-                end = self.n_users + self.m_items
-            else:
-                end = (i_fold + 1) * fold_len
-            A_fold.append(self.__convert_sp_mat_to_sp_tensor(A[start:end]).coalesce().to(self.device))
-        return A_fold
 
     def __convert_sp_mat_to_sp_tensor(self, X):
         coo = X.tocoo().astype(np.float32)

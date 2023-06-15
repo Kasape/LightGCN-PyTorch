@@ -50,13 +50,13 @@ utils.set_seed(args.seed)
 
 if args.dataset in ["gowalla", "yelp2018", "amazon-book"]:
     path = os.path.join("data", args.dataset)
-    dataset = dataloader.Loader(A_split=False, folds=args.a_fold, path=path, device=DEVICE)
+    dataset = dataloader.Loader(folds=args.a_fold, path=path, device=DEVICE)
 elif args.dataset == "lastfm":
     dataset = dataloader.LastFM(device=DEVICE)
 else:
     raise NotImplementedError(f"Unsupported dataset {args.dataset}")
 
-rec_model = model.LightGCN(args.layers, args.latent_dim, A_split=False, dataset=dataset)
+rec_model = model.LightGCN(args.layers, args.latent_dim, dataset=dataset)
 rec_model = rec_model.to(DEVICE)
 bpr = utils.BPRLoss(rec_model, args.lambda_, args.lr)
 

@@ -15,11 +15,10 @@ from dataloader import BasicDataset
 
 
 class LightGCN(torch.nn.Module):
-    def __init__(self, n_layers: int, latent_dim: int, A_split: bool, dataset: BasicDataset):
+    def __init__(self, n_layers: int, latent_dim: int, dataset: BasicDataset):
         super(LightGCN, self).__init__()
         self.latent_dim = latent_dim
         self.n_layers = n_layers
-        self.A_split = A_split
         self.dataset = dataset
         self.num_users = self.dataset.n_users
         self.num_items = self.dataset.m_items
@@ -41,16 +40,8 @@ class LightGCN(torch.nn.Module):
         all_emb = torch.cat([users_emb, items_emb])
         embs = [all_emb]
         g = self.Graph
-
         for layer in range(self.n_layers):
-            if self.A_split:
-                temp_emb = []
-                for f in range(len(g)):
-                    temp_emb.append(torch.sparse.mm(g[f], all_emb))
-                side_emb = torch.cat(temp_emb, dim=0)
-                all_emb = side_emb
-            else:
-                all_emb = torch.sparse.mm(g, all_emb)
+            all_emb = torch.sparse.mm(g, all_emb)
             embs.append(all_emb)
         embs = torch.stack(embs, dim=1)
         light_out = torch.mean(embs, dim=1)
@@ -61,7 +52,7 @@ class LightGCN(torch.nn.Module):
         all_users, all_items = self.computer()
         users_emb = all_users[users.long()]
         items_emb = all_items
-        rating = self.f(torch.matmul(users_emb, items_emb.t()))
+        rating = self.f(users_emb @ items_emb.T)
         return rating
 
     def get_embedding(self, users: torch.Tensor, pos_items: torch.Tensor, neg_items: torch.Tensor):
