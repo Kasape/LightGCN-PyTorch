@@ -36,8 +36,9 @@ def UniformSample(dataset: BasicDataset):
     """
     The original impliment of BPR Sampling in LightGCN
 
-    For each user, take only one randomly selected item interacted by the users as possitive item
-    and one item not-interacted by the user as negative item
+    Generate M triples of user_index, positive item (item interacted by the user), negative item (item not interacted by the user).
+    Number of M is equal to the number of all interactions.
+    Users are selected randomly with possible repetation.
     :return:
         np.array
     """
