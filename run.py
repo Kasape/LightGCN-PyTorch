@@ -1,94 +1,102 @@
 import time
 import os
 import logging
+import argparse
 
 import torch
+import numpy as np
 from torch.utils.tensorboard import SummaryWriter
 
 import dataloader
 from model import LightGCN, UniformSamplingDataset, SaveMetricsCallback
-import utils
-from parse import parse_args
 
 LOGGING_FORMAT = "[%(asctime)s] %(levelname)s: %(message)s"
 logging.basicConfig(format=LOGGING_FORMAT, level=logging.INFO)
 
-os.environ["KMP_DUPLICATE_LIB_OK"] = "True"
-args = parse_args()
 
-ROOT_PATH = os.path.dirname(os.path.dirname(__file__))
-CODE_PATH = os.path.join(ROOT_PATH, "code")
-DATA_PATH = os.path.join(ROOT_PATH, "data")
-BOARD_PATH = os.path.join(CODE_PATH, "runs")
-FILE_PATH = os.path.join(CODE_PATH, "checkpoints")
+def parse_args():
+    parser = argparse.ArgumentParser(description="Go lightGCN")
+    parser.add_argument("--n-threads", type=int, default=-1, help="Number of threads")
+    parser.add_argument("--dataset", type=str, choices=["lastfm", "gowalla", "yelp2018", "amazon-book"])
+    parser.add_argument("--layers", type=int, default=3, help="The number of layers lightGCN")
+    parser.add_argument("--latent-dim", type=int, default=64, help="The embedding size of lightGCN")
+    parser.add_argument("--lambda", dest="lambda_", type=float, default=1e-4, help="Coefficient for l2 normalizaton")
+    parser.add_argument("--lr", type=float, default=0.001, help="The learning rate")
+    parser.add_argument("--epochs", type=int, default=1000)
+    parser.add_argument("--train-batch", type=int, default=2048, help="The batch size for bpr loss training procedure")
+    parser.add_argument("--eval-batch", type=int, default=100, help="The batch size of users for evaluation (validation and test)")
+    parser.add_argument("--topks", nargs="+", type=int, default=20, help="List of K to measure NDCG@K and Recall@K")
+    parser.add_argument("--tensorboard", type=int, default=1, help="Enable tensorboard")
+    parser.add_argument("--seed", type=int, default=2020, help="random seed")
+    return parser.parse_args()
 
-os.makedirs(FILE_PATH, exist_ok=True)
 
-if args.n_threads == -1:
-    system_cpu = os.cpu_count()
-    if system_cpu is None:
-        logging.info(
-            "Number of threads using n-threads parameter were not explicitely provided and it cannot be obtained from the system. Setting number of threads to 1."
-        )
+if __name__ == "__main__":
+    args = parse_args()
+    ROOT_PATH = os.path.dirname(os.path.dirname(__file__))
+    CODE_PATH = os.path.join(ROOT_PATH, "code")
+    DATA_PATH = os.path.join(ROOT_PATH, "data")
+    BOARD_PATH = os.path.join(CODE_PATH, "runs")
+
+    if args.n_threads == -1:
+        system_cpu = os.cpu_count()
+        if system_cpu is None:
+            logging.info(
+                "Number of threads using n-threads parameter were not explicitely provided and it cannot be obtained from the system. Setting number of threads to 1."
+            )
+        else:
+            logging.info(
+                f"Number of threads using n-threads parameter were not explicitely provided. Setting number of threads to {system_cpu} provided by the system"
+            )
+        args.n_threads = system_cpu or 1
+
+    if torch.get_num_threads() != args.n_threads:
+        torch.set_num_threads(args.n_threads)
+    if torch.get_num_interop_threads() != args.n_threads:
+        torch.set_num_interop_threads(args.n_threads)
+
+    DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    logging.info(f"Arguments are: {vars(args)}")
+    logging.info(f"Setting a random seed to: {args.seed}")
+    np.random.seed(args.seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(args.seed)
+        torch.cuda.manual_seed_all(args.seed)
+    torch.manual_seed(args.seed)
+
+    if args.dataset in ["gowalla", "yelp2018", "amazon-book"]:
+        path = os.path.join("data", args.dataset)
+        dataset = dataloader.Loader(path=path, device=DEVICE)
+    elif args.dataset == "lastfm":
+        dataset = dataloader.LastFM(device=DEVICE)
     else:
-        logging.info(
-            f"Number of threads using n-threads parameter were not explicitely provided. Setting number of threads to {system_cpu} provided by the system"
-        )
-    args.n_threads = system_cpu or 1
+        raise NotImplementedError(f"Unsupported dataset {args.dataset}")
 
-if torch.get_num_threads() != args.n_threads:
-    torch.set_num_threads(args.n_threads)
-if torch.get_num_interop_threads() != args.n_threads:
-    torch.set_num_interop_threads(args.n_threads)
+    model = LightGCN(
+        args.layers, args.latent_dim, n_users=dataset.n_users,
+        n_items=dataset.m_items, training_graph=dataset.get_sparse_graph(), device=DEVICE,
+        learning_rate=args.lr, lambda_=args.lambda_
+    )
 
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    train_dataloader = torch.utils.data.DataLoader(
+        UniformSamplingDataset(dataset),
+        shuffle=True,
+        batch_size=args.train_batch,
+        num_workers=args.n_threads
+    )
 
-logging.info(f"Arguments are: {vars(args)}")
-logging.info(f"Setting a random seed to: {args.seed}")
-utils.set_seed(args.seed)
+    # init tensorboard
+    if args.tensorboard:
+        path = os.path.join(BOARD_PATH, time.strftime("%m-%d-%Hh%Mm%Ss-") + "LGN")
+        writer = SummaryWriter(path)
+        logging.info(f"Tensorboard was inicitialized to path={path}")
+    else:
+        writer = None
+        logging.info("Tensorboard will not be used")
 
-if args.dataset in ["gowalla", "yelp2018", "amazon-book"]:
-    path = os.path.join("data", args.dataset)
-    dataset = dataloader.Loader(path=path, device=DEVICE)
-elif args.dataset == "lastfm":
-    dataset = dataloader.LastFM(device=DEVICE)
-else:
-    raise NotImplementedError(f"Unsupported dataset {args.dataset}")
-
-model = LightGCN(
-    args.layers, args.latent_dim, n_users=dataset.n_users,
-    n_items=dataset.m_items, training_graph=dataset.get_sparse_graph(), device=DEVICE,
-    learning_rate=args.lr, lambda_=args.lambda_
-)
-
-train_dataloader = torch.utils.data.DataLoader(
-    UniformSamplingDataset(dataset),
-    shuffle=True,
-    batch_size=args.train_batch,
-    num_workers=args.n_threads
-)
-
-# weight_file = os.path.join(FILE_PATH, f"lgn-{args.dataset}-{args.layers}-{args.latent_dim}.pth.tar")
-#
-# logging.info(f"Weights will be saved to {weight_file}")
-# if args.load_previous:
-#     try:
-#         logging.info(f"Flag for loading previous weights was trigged, loading model with weights from {weight_file}")
-#         rec_model.load_state_dict(torch.load(weight_file, map_location=torch.device("cpu")))
-#     except FileNotFoundError:
-#         logging.warning(f"File {weight_file} does not exist, model will be trained from beginning")
-
-# init tensorboard
-if args.tensorboard:
-    path = os.path.join(BOARD_PATH, time.strftime("%m-%d-%Hh%Mm%Ss-") + "LGN")
-    writer = SummaryWriter(path)
-    logging.info(f"Tensorboard was inicitialized to path={path}")
-else:
-    writer = None
-    logging.info("Tensorboard will not be used")
-
-train_callbacks = [SaveMetricsCallback(subset_name="train", writer=writer)]
-model.fit(train_dataloader, epochs=10, train_callbacks=train_callbacks)
+    train_callbacks = [SaveMetricsCallback(subset_name="train", writer=writer)]
+    model.fit(train_dataloader, epochs=10, train_callbacks=train_callbacks)
 
 # try:
 #     for epoch in range(1, args.epochs + 1):
