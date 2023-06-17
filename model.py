@@ -212,6 +212,7 @@ class UniformSamplingDataset(torch.utils.data.Dataset):
         super(UniformSamplingDataset, self).__init__()
         self.__csr_matrix = sparse_matrix
         self.__n_users, self.__n_items = sparse_matrix.shape
+        self.__indices_to_sample = np.nonzero(self.__csr_matrix.sum(axis=1))[0]
 
     def __len__(self):
         """
@@ -226,7 +227,7 @@ class UniformSamplingDataset(torch.utils.data.Dataset):
         """
         Randomly select a user, one of his interacted items as a positive item and one of his non-interacted items as a negative item
         """
-        user_index = np.random.randint(0, self.__n_users)
+        user_index = np.random.choice(self.__indices_to_sample)
         interacted_items = self.__csr_matrix[user_index].nonzero()[1].astype(np.int64)
         positive_item_index = np.random.choice(interacted_items)
         # TODO select negative item using more effective way and potentially infinite loop
