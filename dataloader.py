@@ -300,7 +300,7 @@ class Loader(BasicDataset):
     def get_user_pos_items(self, users):
         posItems = []
         for user in users:
-            posItems.append(self.UserItemNet[user].nonzero()[1])
+            posItems.append((self.UserItemNet[user].nonzero()[1]).astype(np.int64))
         return posItems
 
     def __build_test(self):

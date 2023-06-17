@@ -13,7 +13,6 @@ import torch
 from torch.utils.tensorboard import SummaryWriter
 
 from dataloader import BasicDataset
-import utils
 import model
 
 

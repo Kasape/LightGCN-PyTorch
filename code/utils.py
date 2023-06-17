@@ -31,39 +31,6 @@ class BPRLoss:
 
         return loss.cpu().item()
 
-
-def UniformSample(dataset: BasicDataset):
-    """
-    The original impliment of BPR Sampling in LightGCN
-
-    Generate M triples of user_index, positive item (item interacted by the user), negative item (item not interacted by the user).
-    Number of M is equal to the number of all interactions.
-    Users are selected randomly with possible repetation.
-    :return:
-        np.array
-    """
-    user_num = dataset.train_data_size
-    users = np.random.randint(0, dataset.n_users, user_num)
-    all_positions = dataset.all_positions
-    S = []
-    for i, user in enumerate(users):
-        posForUser = all_positions[user]
-        # Users without any interacted items are skipped
-        if len(posForUser) == 0:
-            continue
-        posindex = np.random.randint(0, len(posForUser))
-        positem = posForUser[posindex]
-        while True:
-            negitem = np.random.randint(0, dataset.m_items)
-            # TODO fix: this loop will run be broken if user interacted with all items
-            if negitem in posForUser:
-                continue
-            else:
-                break
-        S.append([user, positem, negitem])
-    return np.array(S)
-
-
 # ===================end samplers==========================
 # =====================utils====================================
 
@@ -74,16 +41,6 @@ def set_seed(seed):
         torch.cuda.manual_seed(seed)
         torch.cuda.manual_seed_all(seed)
     torch.manual_seed(seed)
-
-
-def results_to_progress_log(results: dict):
-    for key, val in results.items():
-        if isinstance(val, np.ndarray):
-            if len(val) == 1:
-                results[key] = val[0]
-            else:
-                results[key] = val.tolist()
-    return "; ".join(f"{key}: {val}" for key, val in results.items())
 
 
 def minibatch(*tensors, **kwargs):
