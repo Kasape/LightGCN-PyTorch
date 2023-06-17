@@ -25,7 +25,7 @@ def parse_args():
     parser.add_argument("--train-batch", type=int, default=2048, help="The batch size for bpr loss training procedure")
     parser.add_argument("--eval-batch", type=int, default=100, help="The batch size of users for evaluation (validation and test)")
     parser.add_argument("--topks", nargs="+", type=int, default=20, help="List of K to measure NDCG@K and Recall@K")
-    parser.add_argument("--seed", type=int, default=2020, help="random seed")
+    parser.add_argument("--seed", type=int, default=42, help="random seed")
     parser.add_argument("--debug", default=False, action="store_true", help="When enabled, produced models are not saved and metrics are not logged into tensorboard")
     parser.add_argument("--print-interval", type=int, default=None, help="Interval for reporting metrics during training of model")
     return parser, parser.parse_args()
