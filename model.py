@@ -26,15 +26,15 @@ class LightGCN(torch.nn.Module):
         self.__n_users = n_users
         self.__n_items = n_items
         self.__lambda_ = lambda_
-        self.__embedding_user = torch.nn.Embedding(num_embeddings=self.__n_users, embedding_dim=latent_dim)
-        self.__embedding_item = torch.nn.Embedding(num_embeddings=self.__n_items, embedding_dim=latent_dim)
+        self.__embedding_user = torch.nn.Embedding(num_embeddings=self.__n_users, embedding_dim=latent_dim, device=device)
+        self.__embedding_item = torch.nn.Embedding(num_embeddings=self.__n_items, embedding_dim=latent_dim, device=device)
         # random normal init seems to be a better choice when lightGCN actually don't use any non-linear activation function
         torch.nn.init.normal_(self.__embedding_user.weight, std=0.1)
         torch.nn.init.normal_(self.__embedding_item.weight, std=0.1)
         # Sparse COO tensor with shape (n_users + n_items, n_users + n_items)
         # described in "Neural Graph Collaborative Filtering" paper (Equation 8)
         # containing only training data
-        self.__laplacian_matrix = LightGCN.__get_laplacian_matrix(training_sparse_matrix)
+        self.__laplacian_matrix = LightGCN.__get_laplacian_matrix(training_sparse_matrix).to(device)
         self.__optimizer = torch.optim.Adam(self.parameters(), lr=learning_rate)
         self.__device = device
         self.__reset_embedding_cache()
@@ -47,8 +47,8 @@ class LightGCN(torch.nn.Module):
         epochs: int,
         train_data: torch.utils.data.DataLoader,
         train_callbacks: list = [],
-        eval_data: dict = None,
-        eval_callbacks: list = None,
+        eval_data: dict = {},
+        eval_callbacks: list = [],
         savedir: str = None,
         print_interval: int = None,
     ):
@@ -65,7 +65,7 @@ class LightGCN(torch.nn.Module):
                 callback.start_epoch(current_epoch, epochs, total_steps, subset_name="train")
             for step, (user_indices, positive_item_indices, negative_item_indices) in enumerate(train_data, start=1):
                 self.train_step(user_indices, positive_item_indices, negative_item_indices, callbacks=train_callbacks)
-                if step % print_interval == 0 or step == total_steps:
+                if (print_interval is not None and step % print_interval == 0) or step == total_steps:
                     for callback in train_callbacks:
                         if isinstance(callback, AverageMetricsCallback):
                             callback.print_metrics()
@@ -90,9 +90,9 @@ class LightGCN(torch.nn.Module):
     def train_step(self, user_indices: torch.Tensor, positive_item_indices: torch.Tensor, negative_item_indices: torch.Tensor, callbacks: list):
         self.train()
         self.zero_grad()
-        user_indices.to(self.__device)
-        positive_item_indices.to(self.__device)
-        negative_item_indices.to(self.__device)
+        user_indices = user_indices.to(self.__device)
+        positive_item_indices = positive_item_indices.to(self.__device)
+        negative_item_indices = negative_item_indices.to(self.__device)
         bpr_loss, reg_loss = self.__bpr_loss(user_indices, positive_item_indices, negative_item_indices)
         loss = bpr_loss + reg_loss * self.__lambda_
         for callback in callbacks:
@@ -118,14 +118,15 @@ class LightGCN(torch.nn.Module):
         max_k = min(max(topks), self.__n_items)
         with torch.no_grad():
             for step_index, (user_indices, ground_true) in enumerate(dataloader, start=1):
+                user_indices = user_indices.to(self.__device)
+                ground_true = ground_true.to(self.__device)
                 predicted_ratings = self.__predict_users_rating(user_indices)
                 top_max_k_indices = torch.topk(predicted_ratings, k=max_k, axis=-1).indices
                 hits_max_k = torch.gather(ground_true, 1, top_max_k_indices)
-
                 for callback in callbacks:
                     if isinstance(callback, AverageMetricsCallback):
-                        ndcg = {f"NDCG@{k}": metric for k, metric in zip(topks, nDCG_at_ks(topks, ground_true, hits=hits_max_k).mean(axis=1).cpu())}
-                        recall = {f"Recall@{k}": metric for k, metric in zip(topks, recall_at_ks(topks, ground_true, hits=hits_max_k).mean(axis=1).cpu())}
+                        ndcg = {f"NDCG@{k}": metric for k, metric in zip(topks, nDCG_at_ks(topks, ground_true, hits=hits_max_k).mean(axis=1))}
+                        recall = {f"Recall@{k}": metric for k, metric in zip(topks, recall_at_ks(topks, ground_true, hits=hits_max_k).mean(axis=1))}
                         metrics = {**ndcg, **recall, AverageMetricsCallback.WEIGHTS_ATTR: len(user_indices)}
                         callback.append_metrics(**metrics)
                     else:
@@ -209,14 +210,14 @@ class LightGCN(torch.nn.Module):
 class UniformSamplingDataset(torch.utils.data.Dataset):
     def __init__(self, sparse_matrix: scipy.sparse.csr_matrix):
         super(UniformSamplingDataset, self).__init__()
-        self.csr_matrix = sparse_matrix
-        self.n_users, self.n_items = sparse_matrix.shape
+        self.__csr_matrix = sparse_matrix
+        self.__n_users, self.__n_items = sparse_matrix.shape
 
     def __len__(self):
         """
         Returns the number of samples in the dataset.
         """
-        return self.csr_matrix.nnz
+        return self.__csr_matrix.nnz
 
     def len(self):
         return self.__len__()
@@ -225,12 +226,12 @@ class UniformSamplingDataset(torch.utils.data.Dataset):
         """
         Randomly select a user, one of his interacted items as a positive item and one of his non-interacted items as a negative item
         """
-        user_index = np.random.randint(0, self.n_users)
-        interacted_items = self.csr_matrix[user_index].nonzero()[1].astype(np.int64)
+        user_index = np.random.randint(0, self.__n_users)
+        interacted_items = self.__csr_matrix[user_index].nonzero()[1].astype(np.int64)
         positive_item_index = np.random.choice(interacted_items)
         # TODO select negative item using more effective way and potentially infinite loop
         while True:
-            negative_item_index = np.random.randint(0, self.n_items)
+            negative_item_index = np.random.randint(0, self.__n_items)
             # this loop will run indefinitely if user interacted with all items
             if negative_item_index in interacted_items:
                 continue
