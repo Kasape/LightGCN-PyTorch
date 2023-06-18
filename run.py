@@ -26,7 +26,9 @@ def parse_args():
     parser.add_argument("--eval-batch", type=int, default=100, help="The batch size of users for evaluation (validation and test)")
     parser.add_argument("--topks", nargs="+", type=int, default=20, help="List of K to measure NDCG@K and Recall@K")
     parser.add_argument("--seed", type=int, default=42, help="random seed")
-    parser.add_argument("--debug", default=False, action="store_true", help="When enabled, produced models are not saved and metrics are not logged into tensorboard")
+    parser.add_argument(
+        "--debug", default=False, action="store_true", help="When enabled, produced models are not saved and metrics are not logged into tensorboard"
+    )
     parser.add_argument("--print-interval", type=int, default=None, help="Interval for reporting metrics during training of model")
     return parser, parser.parse_args()
 
@@ -93,10 +95,7 @@ if __name__ == "__main__":
     )
 
     train_dataloader = torch.utils.data.DataLoader(
-        UniformSamplingDataset(dataset.get_rating_matrix("train")),
-        shuffle=False,
-        batch_size=args.train_batch,
-        num_workers=args.n_threads
+        UniformSamplingDataset(dataset.get_rating_matrix("train")), shuffle=False, batch_size=args.train_batch, num_workers=args.n_threads
     )
 
     # Special collate function to vertically stack tensors (1, n_items) to (batch_size, n_items)
@@ -105,13 +104,11 @@ if __name__ == "__main__":
         # X is a list of two-element tuples; first element is a user_index (int) and second element is a dense tensor (1, n_items)
         user_indices, ground_true = torch.utils.data.default_collate(batch)
         return user_indices, ground_true[:, 0, :]
+
     # Data for evaluation are prepared using different method than data for training
     evaluation_dataloaders = {
         subset_name: torch.utils.data.DataLoader(
-            SparseMatrixDataset(dataset.get_rating_matrix(subset_name), device=DEVICE),
-            batch_size=args.eval_batch,
-            shuffle=False,
-            collate_fn=collate_fn
+            SparseMatrixDataset(dataset.get_rating_matrix(subset_name), device=DEVICE), batch_size=args.eval_batch, shuffle=False, collate_fn=collate_fn
         )
         for subset_name in dataset.get_subset_names()
     }
@@ -122,5 +119,5 @@ if __name__ == "__main__":
         train_callbacks=[AverageMetricsCallback(writer=writer)],
         eval_data=evaluation_dataloaders,
         eval_callbacks=[AverageMetricsCallback(writer=writer)],
-        print_interval=args.print_interval
+        print_interval=args.print_interval,
     )

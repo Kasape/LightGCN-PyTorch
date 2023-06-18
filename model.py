@@ -207,6 +207,10 @@ class LightGCN(torch.nn.Module):
         return loss, reg_loss
 
 
+# TODO For smaller datasets, the model spends 90% of its time by sampling.
+# Since model needs to have a copy of training sparse matrix on GPU to compute matrix L anyway,
+# it would make sense to move sampling on GPU as well.
+# A problematic task is a vectorized sampling of negative_item_indices (without while loop)
 class UniformSamplingDataset(torch.utils.data.Dataset):
     def __init__(self, sparse_matrix: scipy.sparse.csr_matrix):
         super(UniformSamplingDataset, self).__init__()
